@@ -1,0 +1,69 @@
+name: S1 CI Symlink Impact Proof
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  checks-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Create runner-owned outside source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/checks-runner-owned
+          cat > /tmp/checks-runner-owned/RunnerOwnedSecret.java <<EOF
+          class RunnerOwnedSecret {
+            void leak(android.content.ContentResolver cr) {
+              String androidId = Settings.Secure.getString(cr, Settings.Secure.ANDROID_ID);
+              String marker = "${{ secrets.S1_CI_SECRET_MARKER }}";
+            }
+          }
+          EOF
+          chmod 600 /tmp/checks-runner-owned/RunnerOwnedSecret.java
+          printf 'runner-owned-file=%s\n' /tmp/checks-runner-owned/RunnerOwnedSecret.java
+
+      - name: Install Checks CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --compressed https://dl.google.com/checks/cli/latest/checks-linux -o checks
+          chmod +x ./checks
+          ./checks --version
+
+      - name: Materialize Checks service-account credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' '${{ secrets.CHECKS_SERVICE_ACCOUNT_JSON }}' > "$RUNNER_TEMP/checks-sa.json"
+          chmod 600 "$RUNNER_TEMP/checks-sa.json"
+
+      - name: Run Checks scan on PR-controlled checkout
+        shell: bash
+        env:
+          CHECKS_CREDENTIALS: ${{ runner.temp }}/checks-sa.json
+        run: |
+          set -euo pipefail
+          ./checks code scan . \
+            --account-id=2023322768 \
+            --repo-id=1867966104 \
+            --scm-remote-url=https://github.com/claudeloba/checks-s1-ci-impact-poc \
+            --branch-name=ci-proof \
+            --scm-revision=S1_CI_RUNNER_SECRET_20260526 \
+            --format=json \
+            --wait-and-print-report \
+            --timeout=20m \
+            --disable-analytics \
+            --disable-version-check \
+            --no-input | tee "$RUNNER_TEMP/checks-s1-output.json"
