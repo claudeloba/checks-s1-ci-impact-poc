@@ -53,27 +53,41 @@ jobs:
           set -euo pipefail
           sdkmanager_path="${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager"
           if [[ -x "$sdkmanager_path" ]]; then
-            yes | "$sdkmanager_path" --licenses >/dev/null || true
-            "$sdkmanager_path" "sources;android-35"
+            yes | "$sdkmanager_path" --licenses >/dev/null 2>&1 || true
+            if "$sdkmanager_path" "sources;android-35" >/tmp/checks-sdkmanager-sources.log 2>&1; then
+              printf 'sdkmanager-installed package=%s\n' "sources;android-35"
+            else
+              cat /tmp/checks-sdkmanager-sources.log
+              exit 1
+            fi
           else
             printf 'sdkmanager-missing path=%s\n' "$sdkmanager_path"
           fi
 
           mkdir -p /tmp/checks-natural-sources/androidx-core
+          androidx_jar=/tmp/checks-natural-sources/androidx-core-sources.jar
           if command -v mvn >/dev/null 2>&1; then
-            mvn -B -q org.apache.maven.plugins:maven-dependency-plugin:3.6.1:copy \
+            if mvn -B -q org.apache.maven.plugins:maven-dependency-plugin:3.6.1:copy \
               -Dartifact=androidx.core:core:1.13.1:jar:sources \
               -DremoteRepositories=google::default::https://dl.google.com/dl/android/maven2,central::default::https://repo.maven.apache.org/maven2 \
-              -DoutputDirectory=/tmp/checks-natural-sources
-            mv /tmp/checks-natural-sources/core-1.13.1-sources.jar \
-              /tmp/checks-natural-sources/androidx-core-sources.jar
-          else
-            curl -L --fail --compressed \
-              https://dl.google.com/dl/android/maven2/androidx/core/core/1.13.1/core-1.13.1-sources.jar \
-              -o /tmp/checks-natural-sources/androidx-core-sources.jar
+              -DoutputDirectory=/tmp/checks-natural-sources; then
+              mv /tmp/checks-natural-sources/core-1.13.1-sources.jar "$androidx_jar"
+            else
+              printf 'androidx-source-resolve-failed tool=mvn artifact=%s\n' "androidx.core:core:1.13.1:jar:sources"
+            fi
           fi
-          unzip -q /tmp/checks-natural-sources/androidx-core-sources.jar \
-            -d /tmp/checks-natural-sources/androidx-core
+          if [[ ! -s "$androidx_jar" ]]; then
+            curl -L --fail --compressed --silent --show-error \
+              https://dl.google.com/dl/android/maven2/androidx/core/core/1.13.1/core-1.13.1-sources.jar \
+              -o "$androidx_jar" || \
+              printf 'androidx-source-resolve-failed tool=curl artifact=%s\n' "androidx.core:core:1.13.1:jar:sources"
+          fi
+          if [[ -s "$androidx_jar" ]]; then
+            unzip -q "$androidx_jar" -d /tmp/checks-natural-sources/androidx-core || \
+              printf 'androidx-source-unzip-failed path=%s\n' "$androidx_jar"
+          else
+            printf 'androidx-source-missing path=%s\n' "$androidx_jar"
+          fi
           for path in \
             /usr/local/lib/android/sdk/sources/android-35/android/provider/Settings.java \
             /usr/local/lib/android/sdk/sources/android-35/android/telephony/TelephonyManager.java \
