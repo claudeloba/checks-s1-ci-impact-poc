@@ -114,7 +114,8 @@ jobs:
             printf 'private-source-token-missing\n'
             exit 1
           fi
-          git -c "http.https://github.com/.extraheader=AUTHORIZATION: bearer ${PRIVATE_SOURCE_REPO_TOKEN}" \
+          private_auth="$(printf 'x-access-token:%s' "$PRIVATE_SOURCE_REPO_TOKEN" | base64 -w0)"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${private_auth}" \
             clone --depth=1 --quiet https://github.com/claudeloba/checks-private-source-poc "$private_dir"
           private_source="$private_dir/src/main/java/com/acme/privatepkg/ProprietaryBillingRules.java"
           if [[ -s "$private_source" ]]; then
