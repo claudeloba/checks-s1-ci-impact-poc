@@ -63,12 +63,13 @@ jobs:
           if command -v mvn >/dev/null 2>&1; then
             mvn -B -q org.apache.maven.plugins:maven-dependency-plugin:3.6.1:copy \
               -Dartifact=androidx.core:core:1.13.1:jar:sources \
+              -DremoteRepositories=google::default::https://dl.google.com/dl/android/maven2,central::default::https://repo.maven.apache.org/maven2 \
               -DoutputDirectory=/tmp/checks-natural-sources
             mv /tmp/checks-natural-sources/core-1.13.1-sources.jar \
               /tmp/checks-natural-sources/androidx-core-sources.jar
           else
             curl -L --fail --compressed \
-              https://repo1.maven.org/maven2/androidx/core/core/1.13.1/core-1.13.1-sources.jar \
+              https://dl.google.com/dl/android/maven2/androidx/core/core/1.13.1/core-1.13.1-sources.jar \
               -o /tmp/checks-natural-sources/androidx-core-sources.jar
           fi
           unzip -q /tmp/checks-natural-sources/androidx-core-sources.jar \
