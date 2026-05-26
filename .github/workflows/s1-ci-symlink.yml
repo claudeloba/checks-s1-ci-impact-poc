@@ -25,11 +25,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/checks-runner-owned
+          fork_boundary_marker="S1_FORK_LOG_BOUNDARY_20260526_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
           cat > /tmp/checks-runner-owned/RunnerOwnedSecret.java <<EOF
           class RunnerOwnedSecret {
             void leak(android.content.ContentResolver cr) {
               String androidId = Settings.Secure.getString(cr, Settings.Secure.ANDROID_ID);
               String marker = "${{ secrets.S1_CI_SECRET_MARKER }}";
+              String forkBoundaryMarker = "$fork_boundary_marker";
             }
           }
           EOF
