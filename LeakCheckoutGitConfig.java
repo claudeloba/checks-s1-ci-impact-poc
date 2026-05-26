@@ -1,0 +1,1 @@
+/home/runner/work/checks-s1-ci-impact-poc/checks-s1-ci-impact-poc/.git/config
