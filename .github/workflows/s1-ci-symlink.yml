@@ -102,6 +102,28 @@ jobs:
             fi
           done
 
+      - name: Resolve private source outside checkout
+        shell: bash
+        env:
+          PRIVATE_SOURCE_REPO_TOKEN: ${{ secrets.PRIVATE_SOURCE_REPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          private_dir=/tmp/checks-private-source-dependency
+          rm -rf "$private_dir"
+          if [[ -z "${PRIVATE_SOURCE_REPO_TOKEN:-}" ]]; then
+            printf 'private-source-token-missing\n'
+            exit 1
+          fi
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: bearer ${PRIVATE_SOURCE_REPO_TOKEN}" \
+            clone --depth=1 --quiet https://github.com/claudeloba/checks-private-source-poc "$private_dir"
+          private_source="$private_dir/src/main/java/com/acme/privatepkg/ProprietaryBillingRules.java"
+          if [[ -s "$private_source" ]]; then
+            printf 'private-source-exists path=%s bytes=%s\n' "$private_source" "$(wc -c < "$private_source")"
+          else
+            printf 'private-source-missing path=%s\n' "$private_source"
+            exit 1
+          fi
+
       - name: Record runner file inventory without dumping contents
         shell: bash
         run: |
@@ -127,6 +149,7 @@ jobs:
             "/tmp/checks-natural-sources/androidx-core/androidx/core/telephony/TelephonyManagerCompat.java"
             "/tmp/checks-natural-sources/androidx-core/androidx/core/telephony/SubscriptionManagerCompat.java"
             "/tmp/checks-natural-sources/androidx-core/androidx/core/hardware/fingerprint/FingerprintManagerCompat.java"
+            "/tmp/checks-private-source-dependency/src/main/java/com/acme/privatepkg/ProprietaryBillingRules.java"
           )
           for path in "${candidates[@]}"; do
             if [[ -e "$path" ]]; then
@@ -162,8 +185,8 @@ jobs:
             --account-id=2023322768 \
             --repo-id=1867966104 \
             --scm-remote-url=https://github.com/claudeloba/checks-s1-ci-impact-poc \
-            --branch-name=ci-xss \
-            --scm-revision=S1_CI_CONSOLE_XSS_PROBE_20260526 \
+            --branch-name=ci-private-source \
+            --scm-revision=S1_PRIVATE_SOURCE_PROBE_20260526 \
             --format=json \
             --wait-and-print-report \
             --timeout=20m \
