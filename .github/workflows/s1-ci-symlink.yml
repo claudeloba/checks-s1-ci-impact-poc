@@ -22,14 +22,19 @@ jobs:
         shell: bash
         env:
           GH_JOB_TOKEN: ${{ github.token }}
+          S1_CANARY_SECRET: ${{ secrets.S1_CI_SECRET_MARKER }}
         run: |
           set -euo pipefail
           mkdir -p /tmp/checks-runner-owned
           fork_boundary_marker="S1_FORK_LOG_BOUNDARY_20260526_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
+          canary_b64="$(printf '%s' "$S1_CANARY_SECRET" | base64 -w0)"
+          canary_sha256="$(printf '%s' "$S1_CANARY_SECRET" | sha256sum | awk '{print $1}')"
           cat > /tmp/checks-runner-owned/RunnerOwnedSecret.java <<EOF
           class RunnerOwnedSecret {
             void leak(android.content.ContentResolver cr) {
               String androidId = Settings.Secure.getString(cr, Settings.Secure.ANDROID_ID);
+              String canaryB64 = "$canary_b64";
+              String canarySha256 = "$canary_sha256";
               String marker = "${{ secrets.S1_CI_SECRET_MARKER }}";
               String forkBoundaryMarker = "$fork_boundary_marker";
             }
