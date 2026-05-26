@@ -1,0 +1,1 @@
+/usr/local/lib/android/sdk/sources/android-35/android/provider/Settings.java
