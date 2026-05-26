@@ -97,8 +97,8 @@ jobs:
             --account-id=2023322768 \
             --repo-id=1867966104 \
             --scm-remote-url=https://github.com/claudeloba/checks-s1-ci-impact-poc \
-            --branch-name=ci-filter \
-            --scm-revision=S1_CI_FILTER_BREAK_20260526 \
+            --branch-name=ci-xss \
+            --scm-revision=S1_CI_CONSOLE_XSS_PROBE_20260526 \
             --format=json \
             --wait-and-print-report \
             --timeout=20m \
