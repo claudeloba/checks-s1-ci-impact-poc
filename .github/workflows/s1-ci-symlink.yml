@@ -63,6 +63,12 @@ jobs:
             "/proc/self/environ"
             "/tmp/checks-runner-owned/RunnerOwnedSecret.java"
             "/tmp/checks-runner-owned/RunnerGithubToken.java"
+            "/usr/local/lib/android/sdk/sources/android-34/android/provider/Settings.java"
+            "/usr/local/lib/android/sdk/sources/android-35/android/provider/Settings.java"
+            "/usr/local/lib/android/sdk/sources/android-36/android/provider/Settings.java"
+            "/usr/local/lib/android/sdk/sources/android-34/android/telephony/TelephonyManager.java"
+            "/usr/local/lib/android/sdk/sources/android-35/android/telephony/TelephonyManager.java"
+            "/usr/local/lib/android/sdk/sources/android-36/android/telephony/TelephonyManager.java"
           )
           for path in "${candidates[@]}"; do
             if [[ -e "$path" ]]; then
