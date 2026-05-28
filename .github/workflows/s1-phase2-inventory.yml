@@ -1,0 +1,110 @@
+name: S1 Phase 2 - Runner Natural-Source Inventory
+
+# Purpose (Phase 2 of the S1 test plan): answer the counterfactual that decides
+# severity -- is there any NATURALLY-PRESENT, proprietary, loose .java/.kt/.swift
+# source OUTSIDE the PR checkout that the S1 symlink could return and a fork-PR
+# author could not otherwise read?
+#
+# We already proved (locally): Checks returns ONLY supported source (Java/Kotlin/
+# Swift), gated by extension, ~+-2 lines around a privacy call-site; it does NOT
+# unpack archives (.jar/-sources.jar/.aar) and does NOT read config/env/secrets.
+# So the open question is what NATURALLY exists in a readable shape on a runner.
+#
+# This job is read-only inventory + a --skip-upload readability probe. No secrets
+# needed. Trigger manually: Actions tab -> this workflow -> Run workflow.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 2.1 Inventory loose source files OUTSIDE the checkout
+        shell: bash
+        run: |
+          set -uo pipefail
+          WS="$GITHUB_WORKSPACE"
+          for ext in java kt swift; do
+            find / -xdev -type f -name "*.$ext" 2>/dev/null | grep -v "^$WS/" > "/tmp/src_$ext.txt" || true
+            echo "::group::.$ext  total=$(wc -l < /tmp/src_$ext.txt) (top 25 directories)"
+            sed 's@/[^/]*$@@' "/tmp/src_$ext.txt" | sort | uniq -c | sort -rn | head -25
+            echo "::endgroup::"
+          done
+          echo "Interpretation: dirs under android/sdk/sources or androidx are PUBLIC (AOSP)."
+          echo "Anything else is a proprietary-candidate worth manual review."
+
+      - name: 2.2 Does a resolved dependency land as LOOSE source or stay a JAR?
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p /tmp/depproj && cd /tmp/depproj
+          cat > settings.gradle <<'EOF'
+          rootProject.name = 'depproj'
+          EOF
+          cat > build.gradle <<'EOF'
+          plugins { id 'java' }
+          repositories { mavenCentral(); google() }
+          dependencies { implementation 'androidx.annotation:annotation:1.7.1' }
+          EOF
+          # Resolve dependencies the way a normal CI build would (no IDE sync).
+          (gradle --no-daemon --quiet dependencies > /tmp/gradle.log 2>&1) || echo "gradle rc=$?"
+          echo "::group::-sources.jar present in gradle cache (PACKAGED = NOT readable by Checks)"
+          find ~/.gradle -name '*-sources.jar' 2>/dev/null | head -20
+          echo "::endgroup::"
+          echo "::group::loose .java/.kt extracted anywhere under ~/.gradle or ~/.m2 (would be READABLE)"
+          find ~/.gradle ~/.m2 -type f \( -name '*.java' -o -name '*.kt' \) 2>/dev/null | head -20
+          echo "::endgroup::"
+          echo "If the loose-source list is EMPTY, proprietary deps stay packaged ->"
+          echo "the symlink cannot reach them -> counterfactual: natural readable source is PUBLIC only."
+
+      - name: 2.4 Any secret-shaped tokens in readable source types outside the checkout?
+        shell: bash
+        run: |
+          set -uo pipefail
+          : > /tmp/secret_hits.txt
+          cat /tmp/src_java.txt /tmp/src_kt.txt /tmp/src_swift.txt 2>/dev/null | while read -r f; do
+            grep -lE 'ghs_[A-Za-z0-9]{30,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----|xox[baprs]-|AIza[0-9A-Za-z_-]{30,}' "$f" 2>/dev/null
+          done >> /tmp/secret_hits.txt || true
+          echo "secret-bearing readable-source files found: $(wc -l < /tmp/secret_hits.txt)"
+          head -20 /tmp/secret_hits.txt
+          echo "(empty = no naturally-present secret lives in a Checks-readable source type)"
+
+      - name: Install Checks CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --compressed https://dl.google.com/checks/cli/latest/checks-linux -o checks
+          chmod +x ./checks
+          ./checks --version || true
+
+      - name: 2.x Readability probe - symlink at top natural sources, --skip-upload
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p /tmp/probe && cd /tmp/probe
+          git init -q
+          i=0
+          # prefer any proprietary-candidate (non-sdk, non-androidx) first, then fall back to SDK
+          { grep -vE 'android-[0-9]+|androidx|/jvm/|src\.zip' /tmp/src_java.txt; cat /tmp/src_java.txt; } 2>/dev/null \
+            | awk '!seen[$0]++' | while read -r f && [ "$i" -lt 6 ]; do
+                if [ -e "$f" ]; then ln -s "$f" "Natural_$i.java"; i=$((i+1)); fi
+              done
+          ls -la
+          git add -A && git -c user.email=p@x -c user.name=p commit -qm probe || true
+          ../../checks code scan /tmp/probe --skip-upload --format=json \
+            --account-id=2023322768 --repo-id=1867966104 \
+            --scm-remote-url=https://github.com/claudeloba/checks-s1-ci-impact-poc \
+            --branch-name=phase2-natural --disable-analytics --disable-version-check --no-input \
+            > /tmp/phase2-probe.json 2>/tmp/phase2-probe.err || cat /tmp/phase2-probe.err
+          echo "::group::files Checks RETURNED (resolve each symlink to see if public vs proprietary)"
+          grep -oE '"fileName": *"[^"]*"' /tmp/phase2-probe.json || echo "(no sources returned)"
+          echo "::endgroup::"
+          echo "Map each returned Natural_N.java back to its symlink target with: ls -l /tmp/probe"
+          ls -l /tmp/probe
