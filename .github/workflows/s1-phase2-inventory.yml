@@ -29,7 +29,7 @@ jobs:
       - name: 2.1 Inventory loose source files OUTSIDE the checkout
         shell: bash
         run: |
-          set -uo pipefail
+          set +e +o pipefail
           WS="$GITHUB_WORKSPACE"
           for ext in java kt swift; do
             find / -xdev -type f -name "*.$ext" 2>/dev/null | grep -v "^$WS/" > "/tmp/src_$ext.txt" || true
@@ -43,31 +43,24 @@ jobs:
       - name: 2.2 Does a resolved dependency land as LOOSE source or stay a JAR?
         shell: bash
         run: |
-          set -uo pipefail
-          mkdir -p /tmp/depproj && cd /tmp/depproj
-          cat > settings.gradle <<'EOF'
-          rootProject.name = 'depproj'
-          EOF
-          cat > build.gradle <<'EOF'
-          plugins { id 'java' }
-          repositories { mavenCentral(); google() }
-          dependencies { implementation 'androidx.annotation:annotation:1.7.1' }
-          EOF
-          # Resolve dependencies the way a normal CI build would (no IDE sync).
-          (gradle --no-daemon --quiet dependencies > /tmp/gradle.log 2>&1) || echo "gradle rc=$?"
-          echo "::group::-sources.jar present in gradle cache (PACKAGED = NOT readable by Checks)"
-          find ~/.gradle -name '*-sources.jar' 2>/dev/null | head -20
-          echo "::endgroup::"
-          echo "::group::loose .java/.kt extracted anywhere under ~/.gradle or ~/.m2 (would be READABLE)"
-          find ~/.gradle ~/.m2 -type f \( -name '*.java' -o -name '*.kt' \) 2>/dev/null | head -20
-          echo "::endgroup::"
-          echo "If the loose-source list is EMPTY, proprietary deps stay packaged ->"
-          echo "the symlink cannot reach them -> counterfactual: natural readable source is PUBLIC only."
+          set +e +o pipefail
+          # Fetch a dependency's SOURCES the normal way and see if it lands loose or as a jar.
+          mvn -B -q org.apache.maven.plugins:maven-dependency-plugin:3.6.1:get \
+            -Dartifact=androidx.annotation:annotation:1.7.1:jar:sources \
+            -DremoteRepositories=google::default::https://dl.google.com/dl/android/maven2,central::default::https://repo.maven.apache.org/maven2 \
+            > /tmp/mvn.log 2>&1
+          echo "mvn exit=$?"
+          echo "### -sources.jar landed in caches (PACKAGED = NOT readable by Checks):"
+          find ~/.m2 ~/.gradle -name '*-sources.jar' 2>/dev/null | head -20
+          echo "### loose .java/.kt AUTO-extracted (would be READABLE without a manual unzip):"
+          find ~/.m2 ~/.gradle -type f \( -name '*.java' -o -name '*.kt' \) 2>/dev/null | head -20
+          echo "(jar present + loose list EMPTY = dependency source stays packaged ->"
+          echo " symlink cannot reach it -> natural readable source is PUBLIC only.)"
 
       - name: 2.4 Any secret-shaped tokens in readable source types outside the checkout?
         shell: bash
         run: |
-          set -uo pipefail
+          set +e +o pipefail
           : > /tmp/secret_hits.txt
           cat /tmp/src_java.txt /tmp/src_kt.txt /tmp/src_swift.txt 2>/dev/null | while read -r f; do
             grep -lE 'ghs_[A-Za-z0-9]{30,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----|xox[baprs]-|AIza[0-9A-Za-z_-]{30,}' "$f" 2>/dev/null
@@ -79,7 +72,7 @@ jobs:
       - name: Install Checks CLI
         shell: bash
         run: |
-          set -euo pipefail
+          set +e +o pipefail
           curl --compressed https://dl.google.com/checks/cli/latest/checks-linux -o checks
           chmod +x ./checks
           ./checks --version || true
@@ -87,7 +80,7 @@ jobs:
       - name: 2.x Readability probe - symlink at top natural sources, --skip-upload
         shell: bash
         run: |
-          set -uo pipefail
+          set +e +o pipefail
           mkdir -p /tmp/probe && cd /tmp/probe
           git init -q
           i=0
