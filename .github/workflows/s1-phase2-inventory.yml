@@ -91,7 +91,7 @@ jobs:
               done
           ls -la
           git add -A && git -c user.email=p@x -c user.name=p commit -qm probe || true
-          ../../checks code scan /tmp/probe --skip-upload --format=json \
+          "$GITHUB_WORKSPACE/checks" code scan /tmp/probe --skip-upload --format=json \
             --account-id=2023322768 --repo-id=1867966104 \
             --scm-remote-url=https://github.com/claudeloba/checks-s1-ci-impact-poc \
             --branch-name=phase2-natural --disable-analytics --disable-version-check --no-input \
