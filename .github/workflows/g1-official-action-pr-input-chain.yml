@@ -1,0 +1,39 @@
+name: G1 Official Checks Action PR Input Chain
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  pr-controlled-binary-path:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Select PR-controlled APK filename
+        id: pick
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact="$(find g1-payload -maxdepth 1 -type f -name '*.apk' -print -quit)"
+          printf 'apkfile=%s\n' "$artifact" >> "$GITHUB_OUTPUT"
+          printf 'selected-apk=%s\n' "$artifact"
+
+      - name: Invoke official Checks action with PR-controlled binary_path
+        uses: google-checks/checks-app-scan-github-action@v1.0.3
+        with:
+          account_id: "1234567890"
+          app_id: "1234590"
+          service_account_base64: ${{ secrets.DUMMY_CHECKS_SA_BASE64 }}
+          binary_path: ${{ steps.pick.outputs.apkfile }}
+          generate_report: "true"
+          wait_for_report: "true"
+          version: "latest"
