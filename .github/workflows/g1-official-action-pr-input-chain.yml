@@ -23,7 +23,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          artifact="$(find g1-payload -maxdepth 1 -type f -name '*.apk' -print -quit)"
+          artifact="$(find g1-payload -maxdepth 1 -type f -name '*$(*.apk' -print -quit)"
           printf 'apkfile=%s\n' "$artifact" >> "$GITHUB_OUTPUT"
           printf 'selected-apk=%s\n' "$artifact"
 
