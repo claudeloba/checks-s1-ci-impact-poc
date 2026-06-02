@@ -95,20 +95,22 @@ jobs:
               if "T1_PYTHON_PTH_CI_MARKER_20260602" in line or "import pathlib" in line:
                   print(f"pth-marker-line-{number}={line!r}")
           PY
-          rm -f "$HOME/T1_PYTHON_PTH_CI_MARKER_20260602"
+          rm -f "$HOME/T1_PYTHON_PTH_CI_MARKER_20260602" "T1_PYTHON_PTH_CI_MARKER_20260602"
           python3.12 -c 'print("PYTHON_STARTED_AFTER_CHECKS")'
-          if test -f "$HOME/T1_PYTHON_PTH_CI_MARKER_20260602"; then
+          if test -f "$HOME/T1_PYTHON_PTH_CI_MARKER_20260602" -o -f "T1_PYTHON_PTH_CI_MARKER_20260602"; then
             default_result=1
           else
             default_result=0
           fi
-          rm -f "$HOME/T1_PYTHON_PTH_CI_MARKER_20260602"
+          rm -f "$HOME/T1_PYTHON_PTH_CI_MARKER_20260602" "T1_PYTHON_PTH_CI_MARKER_20260602"
           env -u PYTHONNOUSERSITE python3.12 -c 'print("PYTHON_STARTED_AFTER_CHECKS_ENV_UNSET")'
-          if test -f "$HOME/T1_PYTHON_PTH_CI_MARKER_20260602"; then
+          if test -f "$HOME/T1_PYTHON_PTH_CI_MARKER_20260602" -o -f "T1_PYTHON_PTH_CI_MARKER_20260602"; then
             env_unset_result=1
           else
             env_unset_result=0
           fi
+          test ! -f "$HOME/T1_PYTHON_PTH_CI_MARKER_20260602" || printf 'python-pth-marker-location=home\n'
+          test ! -f "T1_PYTHON_PTH_CI_MARKER_20260602" || printf 'python-pth-marker-location=workspace\n'
           printf 'python-pth-default-result=%s\n' "$default_result"
           printf 'python-pth-env-unset-result=%s\n' "$env_unset_result"
           test "$default_result" = 1 -o "$env_unset_result" = 1
