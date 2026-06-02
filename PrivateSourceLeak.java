@@ -1,0 +1,1 @@
+/tmp/checks-private-source-dependency/src/main/java/com/acme/privatepkg/ProprietaryBillingRules.java
