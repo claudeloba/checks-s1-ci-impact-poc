@@ -1,0 +1,3 @@
+[submodule "libs/private"]
+	path = libs/private
+	url = https://github.com/claudeloba/checks-private-source-poc.git

