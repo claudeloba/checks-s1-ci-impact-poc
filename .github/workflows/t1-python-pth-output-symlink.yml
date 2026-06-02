@@ -73,7 +73,42 @@ jobs:
           target="$HOME/.local/lib/python3.12/site-packages/checks_t1_ci.pth"
           grep -q 'T1_PYTHON_PTH_CI_MARKER_20260602' "$target"
           printf 'pth-after-first-line=%s\n' "$(sed -n '1p' "$target")"
+          env | sort | grep -E '^(HOME|PYTHON|RUNNER_)=' || true
+          python3.12 - <<'PY'
+          import os
+          import site
+          import sys
+          print(f"python-enable-user-site={site.ENABLE_USER_SITE!r}")
+          print(f"python-no-user-site-flag={sys.flags.no_user_site!r}")
+          print(f"python-user-site={site.getusersitepackages()}")
+          print(f"pythonpath-env={os.environ.get('PYTHONPATH')!r}")
+          print(f"python-no-user-site-env={os.environ.get('PYTHONNOUSERSITE')!r}")
+          print("python-sys-path-begin")
+          for entry in sys.path:
+              print(entry)
+          print("python-sys-path-end")
+          PY
+          python3.12 - <<'PY'
+          from pathlib import Path
+          target = Path.home() / ".local/lib/python3.12/site-packages/checks_t1_ci.pth"
+          for number, line in enumerate(target.read_text(errors="replace").splitlines(), 1):
+              if "T1_PYTHON_PTH_CI_MARKER_20260602" in line or "import pathlib" in line:
+                  print(f"pth-marker-line-{number}={line!r}")
+          PY
           rm -f "$HOME/T1_PYTHON_PTH_CI_MARKER_20260602"
           python3.12 -c 'print("PYTHON_STARTED_AFTER_CHECKS")'
-          test -f "$HOME/T1_PYTHON_PTH_CI_MARKER_20260602"
-          printf 'python-pth-output-symlink-result=pth-import-executed\n'
+          if test -f "$HOME/T1_PYTHON_PTH_CI_MARKER_20260602"; then
+            default_result=1
+          else
+            default_result=0
+          fi
+          rm -f "$HOME/T1_PYTHON_PTH_CI_MARKER_20260602"
+          env -u PYTHONNOUSERSITE python3.12 -c 'print("PYTHON_STARTED_AFTER_CHECKS_ENV_UNSET")'
+          if test -f "$HOME/T1_PYTHON_PTH_CI_MARKER_20260602"; then
+            env_unset_result=1
+          else
+            env_unset_result=0
+          fi
+          printf 'python-pth-default-result=%s\n' "$default_result"
+          printf 'python-pth-env-unset-result=%s\n' "$env_unset_result"
+          test "$default_result" = 1 -o "$env_unset_result" = 1
