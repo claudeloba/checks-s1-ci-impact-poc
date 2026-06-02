@@ -1,0 +1,1 @@
+../libs/private/src/main/java/com/acme/privatepkg/CredentialCanary.java
