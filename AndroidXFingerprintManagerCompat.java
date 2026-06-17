@@ -1,0 +1,1 @@
+/tmp/checks-natural-sources/androidx-core/androidx/core/hardware/fingerprint/FingerprintManagerCompat.java
